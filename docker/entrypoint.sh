@@ -28,6 +28,7 @@ function usage() {
 }
 
 ENABLE_WEBSERVER=1 # Default to enable web server
+ENABLE_NGINX=1     # Add this line
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_DATASYNC=1
 ENABLE_MCP_SERVER=0
@@ -65,6 +66,10 @@ for arg in "$@"; do
   case $arg in
     --disable-webserver)
       ENABLE_WEBSERVER=0
+      shift
+      ;;
+    --disable-nginx)      # Add this block
+      ENABLE_NGINX=0
       shift
       ;;
     --disable-taskexecutor)
@@ -235,8 +240,10 @@ ensure_docling
 ensure_mineru
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
-    echo "Starting nginx..."
-    /usr/sbin/nginx
+    if [[ "${ENABLE_NGINX}" -eq 1 ]]; then  # Add this condition
+        echo "Starting nginx..."
+        /usr/sbin/nginx
+    fi
 
     echo "Starting ragflow_server..."
     while true; do
