@@ -1,0 +1,160 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - --api.dashboard=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.cloudflare.acme.dnschallenge=true
+      - --certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare
+      - --certificatesresolvers.cloudflare.acme.email=omarbjarkas@gmail.com
+      - --certificatesresolvers.cloudflare.acme.storage=/letsencrypt/acme.json
+      - --log.level=INFO
+      - --accesslog=true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard (remove in production)
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/letsencrypt
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  # Frontend - rag-app.guardennes.ai
+  ragflow-frontend:
+    build:
+      context: ..
+      dockerfile: custom_deployment/Dockerfile.frontend
+    networks:
+      - ragflow
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ragflow-frontend.rule=Host(`rag-api.guardennes.ai`)"
+      - "traefik.http.routers.ragflow-frontend.entrypoints=websecure"
+      - "traefik.http.routers.ragflow-frontend.tls.certresolver=cloudflare"
+      - "traefik.http.routers.ragflow-frontend.priority=1"
+      - "traefik.http.services.ragflow-frontend.loadbalancer.server.port=80"
+      
+  ragflow-backend:
+    build:
+      context: ..
+      dockerfile: custom_deployment/Dockerfile.backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      es01:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      MYSQL_PASSWORD: infiniflow
+      REDIS_PASSWORD: infiniflow
+      ELASTIC_PASSWORD: infiniflow
+      MINIO_PASSWORD: infiniflow
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+      ES_HOST: es01
+      MINIO_HOST: minio
+      MINIO_USER: ragflow
+      LLM_FACTORY: OpenAI
+      LLM_API_KEY: EMPTY
+    networks:
+      - ragflow
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ragflow-backend.rule=Host(`rag-api.guardennes.ai`) && (PathPrefix(`/v1/`) || PathPrefix(`/api/`))"
+      - "traefik.http.routers.ragflow-backend.entrypoints=websecure"
+      - "traefik.http.routers.ragflow-backend.tls.certresolver=cloudflare"
+      - "traefik.http.routers.ragflow-backend.priority=10"
+      - "traefik.http.services.ragflow-backend.loadbalancer.server.port=9380"
+
+  mysql:
+    image: mysql:8.0.39
+    environment:
+      MYSQL_ROOT_PASSWORD: infiniflow
+      MYSQL_DATABASE: rag_flow
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-pinfiniflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  redis:
+    image: valkey/valkey:8
+    command: redis-server --requirepass infiniflow
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "infiniflow", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  es01:
+    image: elasticsearch:8.11.3
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=infiniflow
+      - bootstrap.memory_lock=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    mem_limit: 4g
+    healthcheck:
+      test: ["CMD", "curl", "-u", "elastic:infiniflow", "http://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ragflow
+      MINIO_ROOT_PASSWORD: infiniflow
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+volumes:
+  traefik-certs:
+  mysql_data:
+  redis_data:
+  es_data:
+  minio_data:
+
+networks:
+  ragflow:
+    driver: bridge
