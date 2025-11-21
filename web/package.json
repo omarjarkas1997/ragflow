@@ -4,7 +4,7 @@
   "scripts": {
     "build": "umi build",
     "build-storybook": "storybook build",
-    "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",
+    "dev": "cross-env PORT=8002 UMI_DEV_SERVER_COMPRESS=none umi dev",
     "postinstall": "umi setup",
     "lint": "umi lint --eslint-only",
     "prepare": "cd .. && husky web/.husky",
