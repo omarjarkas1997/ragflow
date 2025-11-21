@@ -45,40 +45,61 @@ services:
       - "traefik.http.services.ragflow-frontend.loadbalancer.server.port=80"
       
   ragflow-backend:
-    build:
-      context: ..
-      dockerfile: custom_deployment/Dockerfile.backend
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      es01:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment:
-      MYSQL_PASSWORD: infiniflow
-      REDIS_PASSWORD: infiniflow
-      ELASTIC_PASSWORD: infiniflow
-      MINIO_PASSWORD: infiniflow
-      MYSQL_HOST: mysql
-      REDIS_HOST: redis
-      ES_HOST: es01
-      MINIO_HOST: minio
-      MINIO_USER: ragflow
-      LLM_FACTORY: OpenAI
-      LLM_API_KEY: EMPTY
-    networks:
-      - ragflow
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.ragflow-backend.rule=Host(`rag-api.guardennes.ai`) && (PathPrefix(`/v1/`) || PathPrefix(`/api/`))"
-      - "traefik.http.routers.ragflow-backend.entrypoints=websecure"
-      - "traefik.http.routers.ragflow-backend.tls.certresolver=cloudflare"
-      - "traefik.http.routers.ragflow-backend.priority=10"
-      - "traefik.http.services.ragflow-backend.loadbalancer.server.port=9380"
+      build:
+        context: ..
+        dockerfile: custom_deployment/Dockerfile.backend
+      depends_on:
+        mysql:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+        es01:
+          condition: service_healthy
+        minio:
+          condition: service_healthy
+      environment:
+        MYSQL_PASSWORD: infiniflow
+        REDIS_PASSWORD: infiniflow
+        ELASTIC_PASSWORD: infiniflow
+        MINIO_PASSWORD: infiniflow
+        MYSQL_HOST: mysql
+        REDIS_HOST: redis
+        ES_HOST: es01
+        MINIO_HOST: minio
+        MINIO_USER: ragflow
+        LLM_FACTORY: OpenAI
+        LLM_API_KEY: EMPTY
+      # -------------------------------------------------------
+      # 1. OVERRIDE ENTRYPOINT TO ENABLE DEBUG MODE
+      # -------------------------------------------------------
+      entrypoint: ["./entrypoint.sh", "--disable-nginx", "--disable-datasync"]
+      
+      # -------------------------------------------------------
+      # 2. MOUNT SOURCE CODE VOLUMES FOR HOT RELOADING
+      # -------------------------------------------------------
+      volumes:
+        - ../api:/ragflow/api
+        - ../conf:/ragflow/conf
+        - ../common:/ragflow/common
+        - ../agent:/ragflow/agent
+        - ../agentic_reasoning:/ragflow/agentic_reasoning
+        - ../graphrag:/ragflow/graphrag
+        - ../deepdoc:/ragflow/deepdoc
+        - ./entrypoint.sh:/ragflow/entrypoint.sh  # <--- Add this line
+        # NOTE: We intentionally DO NOT mount ../rag:/ragflow/rag
+        # The container's /ragflow/rag/res folder contains heavy dependencies 
+        # built during the Docker build. Mounting the host folder would hide them.
+      
+      networks:
+        - ragflow
+      restart: unless-stopped
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.ragflow-backend.rule=Host(`rag-api.guardennes.ai`) && (PathPrefix(`/v1/`) || PathPrefix(`/api/`))"
+        - "traefik.http.routers.ragflow-backend.entrypoints=websecure"
+        - "traefik.http.routers.ragflow-backend.tls.certresolver=cloudflare"
+        - "traefik.http.routers.ragflow-backend.priority=10"
+        - "traefik.http.services.ragflow-backend.loadbalancer.server.port=9380"
 
   mysql:
     image: mysql:8.0.39

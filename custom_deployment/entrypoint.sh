@@ -247,7 +247,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     echo "Starting ragflow_server..."
     while true; do
-        "$PY" api/ragflow_server.py &
+        "$PY" api/ragflow_server.py --debug &
         wait;
         sleep 1;
     done &
