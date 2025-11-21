@@ -104,10 +104,6 @@ def login():
         )
 
     password = request.json.get("password")
-    try:
-        password = decrypt(password)
-    except BaseException:
-        return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
 
@@ -125,7 +121,9 @@ def login():
         user.update_date = (datetime_format(datetime.now()),)
         user.save()
         msg = "Welcome back!"
-        return construct_response(data=response_data, auth=user.get_id(), message=msg)
+        response_data["token"] = user.access_token
+        
+        return construct_response(data=response_data, auth=user.get_id(), message="Welcome back!")
     else:
         return get_json_result(
             data=False,
@@ -533,7 +531,7 @@ def setting_user():
     request_data = request.json
     if request_data.get("password"):
         new_password = request_data.get("new_password")
-        if not check_password_hash(current_user.password, decrypt(request_data["password"])):
+        if not check_password_hash(current_user.password, request_data["password"]):
             return get_json_result(
                 data=False,
                 code=RetCode.AUTHENTICATION_ERROR,
@@ -541,7 +539,7 @@ def setting_user():
             )
 
         if new_password:
-            update_dict["password"] = generate_password_hash(decrypt(new_password))
+            update_dict["password"] = generate_password_hash(new_password)
 
     for k in request_data.keys():
         if k in [
@@ -722,7 +720,7 @@ def user_add():
         "access_token": get_uuid(),
         "email": email_address,
         "nickname": nickname,
-        "password": decrypt(req["password"]),
+        "password": req["password"],
         "login_channel": "password",
         "last_login_time": get_format_time(),
         "is_superuser": False,
